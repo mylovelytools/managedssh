@@ -286,6 +286,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pendingKeyPassSave && len(m.pendingKeyPassphrase) > 0 {
 			return m, saveKeyPassphraseCmd(m.store, m.connectHost.ID, m.connectUser, m.encKey, m.pendingKeyPassphrase)
 		}
+		m.pendingKeyPassSave = false
+		zeroBytes(m.pendingKeyPassphrase)
+		m.pendingKeyPassphrase = nil
 		return m, nil
 	case hostVerifyDoneMsg:
 		return m.handleHostVerifyDone(msg)

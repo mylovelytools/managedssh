@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,8 @@ import (
 )
 
 const defaultDialTimeout = 10 * time.Second
+
+var knownHostsMu sync.Mutex
 
 // VerifyConfig holds SSH verification connection inputs.
 type VerifyConfig struct {
@@ -343,14 +346,15 @@ func flattenAuthMethods(methods []authWithCleanup) []ssh.AuthMethod {
 	return out
 }
 
+var defaultKeyNames = []string{"id_ed25519", "id_ed25519_sk", "id_ecdsa", "id_ecdsa_sk", "id_rsa"}
+
 func loadKeyFiles() []ssh.Signer {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
-	names := []string{"id_ed25519", "id_rsa", "id_ecdsa"}
 	var signers []ssh.Signer
-	for _, name := range names {
+	for _, name := range defaultKeyNames {
 		p := filepath.Join(home, ".ssh", name)
 
 		info, err := os.Stat(p)
@@ -491,6 +495,8 @@ func TrustHostKey(err *UnknownHostError) error {
 	if err == nil || err.KnownHostsLine == "" {
 		return fmt.Errorf("missing host key to trust")
 	}
+	knownHostsMu.Lock()
+	defer knownHostsMu.Unlock()
 	khPath, readErr := ensureKnownHostsFile()
 	if readErr != nil {
 		return fmt.Errorf("ensure known_hosts file: %w", readErr)
@@ -518,7 +524,7 @@ func TrustHostKey(err *UnknownHostError) error {
 }
 
 func expandUserPath(path string) string {
-	if path == "~" || len(path) > 2 && path[:2] == "~/" {
+	if path == "~" || len(path) >= 2 && path[:2] == "~/" {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			if path == "~" {

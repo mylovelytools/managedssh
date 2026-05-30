@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -79,13 +81,91 @@ func TestExpandUserPath(t *testing.T) {
 		t.Fatalf("resolve home directory: %v", err)
 	}
 
-	if got := expandUserPath("~"); got != home {
-		t.Fatalf("expandUserPath(~) = %q, want %q", got, home)
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"~", home},
+		{"~/", home},
+		{"~/.ssh/id_ed25519", filepath.Join(home, ".ssh", "id_ed25519")},
+		{"/absolute/path", "/absolute/path"},
+		{"relative/path", "relative/path"},
+	}
+	for _, tt := range tests {
+		if got := expandUserPath(tt.in); got != tt.want {
+			t.Fatalf("expandUserPath(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestTrustHostKeyIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	khErr := &UnknownHostError{
+		Host:           "example.com",
+		KnownHostsLine: "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAFAKE",
 	}
 
-	want := filepath.Join(home, ".ssh", "id_ed25519")
-	if got := expandUserPath("~/.ssh/id_ed25519"); got != want {
-		t.Fatalf("expandUserPath(~/...) = %q, want %q", got, want)
+	if err := TrustHostKey(khErr); err != nil {
+		t.Fatalf("first TrustHostKey failed: %v", err)
+	}
+	if err := TrustHostKey(khErr); err != nil {
+		t.Fatalf("second TrustHostKey failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".ssh", "known_hosts"))
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	count := strings.Count(string(data), khErr.KnownHostsLine)
+	if count != 1 {
+		t.Fatalf("expected key to appear once, got %d occurrences", count)
+	}
+}
+
+func TestTrustHostKeyConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	khErr := &UnknownHostError{
+		Host:           "concurrent.example.com",
+		KnownHostsLine: "concurrent.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAFAKE",
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = TrustHostKey(khErr)
+		}()
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(filepath.Join(dir, ".ssh", "known_hosts"))
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	count := strings.Count(string(data), khErr.KnownHostsLine)
+	if count != 1 {
+		t.Fatalf("expected key to appear once after concurrent writes, got %d occurrences", count)
+	}
+}
+
+func TestDefaultKeyNamesContainsFIDO2(t *testing.T) {
+	expected := []string{"id_ed25519", "id_ed25519_sk", "id_ecdsa", "id_ecdsa_sk", "id_rsa"}
+	if len(defaultKeyNames) != len(expected) {
+		t.Fatalf("defaultKeyNames length = %d, want %d", len(defaultKeyNames), len(expected))
+	}
+	nameSet := make(map[string]struct{}, len(defaultKeyNames))
+	for _, n := range defaultKeyNames {
+		nameSet[n] = struct{}{}
+	}
+	for _, name := range expected {
+		if _, ok := nameSet[name]; !ok {
+			t.Fatalf("defaultKeyNames missing %q", name)
+		}
 	}
 }
 

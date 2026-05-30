@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"golang.org/x/crypto/argon2"
+
+	"github.com/mylovelytools/managedssh/internal/fsutil"
 )
 
 const (
@@ -102,49 +104,6 @@ func decryptBytes(key, nonce, ciphertext, aad []byte) ([]byte, error) {
 	return gcm.Open(nil, nonce, ciphertext, aad)
 }
 
-// atomicWrite writes data to a temporary file then renames it into
-// place so a crash never leaves a truncated file.
-func atomicWrite(path string, data []byte, perm os.FileMode) error {
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmpFile.Close()
-		}
-		_ = os.Remove(tmpPath)
-	}()
-
-	if err := tmpFile.Chmod(perm); err != nil {
-		return err
-	}
-	if _, err := tmpFile.Write(data); err != nil {
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	closed = true
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-
-	dir, err := os.Open(filepath.Dir(path))
-	if err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-
-	return nil
-}
-
 // Create initialises a new vault with the given master password and
 // returns the derived 256-bit encryption key.
 func Create(password string) ([]byte, error) {
@@ -178,7 +137,7 @@ func Create(password string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := atomicWrite(p, data, 0600); err != nil {
+	if err := fsutil.AtomicWrite(p, data, 0600); err != nil {
 		return nil, err
 	}
 

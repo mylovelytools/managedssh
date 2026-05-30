@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mylovelytools/managedssh/internal/fsutil"
 	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
@@ -69,7 +70,7 @@ func Export(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("creating export directory: %w", err)
 	}
-	if err := atomicWrite(path, out, 0600); err != nil {
+	if err := fsutil.AtomicWrite(path, out, 0600); err != nil {
 		return fmt.Errorf("writing export bundle: %w", err)
 	}
 	return nil
@@ -89,10 +90,10 @@ func Import(path string) error {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	if err := atomicWrite(filepath.Join(dir, "vault.json"), b.VaultJSON, 0600); err != nil {
+	if err := fsutil.AtomicWrite(filepath.Join(dir, "vault.json"), b.VaultJSON, 0600); err != nil {
 		return fmt.Errorf("writing vault metadata: %w", err)
 	}
-	if err := atomicWrite(filepath.Join(dir, "hosts.json"), b.HostsJSON, 0600); err != nil {
+	if err := fsutil.AtomicWrite(filepath.Join(dir, "hosts.json"), b.HostsJSON, 0600); err != nil {
 		return fmt.Errorf("writing hosts data: %w", err)
 	}
 
@@ -148,43 +149,3 @@ func loadBundle(path string) (*bundle, error) {
 	return &b, nil
 }
 
-func atomicWrite(path string, data []byte, perm os.FileMode) error {
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmpFile.Close()
-		}
-		_ = os.Remove(tmpPath)
-	}()
-
-	if err := tmpFile.Chmod(perm); err != nil {
-		return err
-	}
-	if _, err := tmpFile.Write(data); err != nil {
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	closed = true
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-
-	dir, err := os.Open(filepath.Dir(path))
-	if err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-
-	return nil
-}

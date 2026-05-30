@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mylovelytools/managedssh/internal/fsutil"
 )
 
 var (
@@ -93,7 +95,7 @@ func (s *Store) Save() error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(s.path, data, 0600)
+	return fsutil.AtomicWrite(s.path, data, 0600)
 }
 
 func (s *Store) Add(h Host) error {
@@ -407,43 +409,3 @@ func cloneBytes(src []byte) []byte {
 	return out
 }
 
-func atomicWrite(path string, data []byte, perm os.FileMode) error {
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmpFile.Close()
-		}
-		_ = os.Remove(tmpPath)
-	}()
-
-	if err := tmpFile.Chmod(perm); err != nil {
-		return err
-	}
-	if _, err := tmpFile.Write(data); err != nil {
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	closed = true
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-
-	dir, err := os.Open(filepath.Dir(path))
-	if err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-
-	return nil
-}

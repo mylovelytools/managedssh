@@ -38,3 +38,21 @@ func TestModelViewWhenQuitting(t *testing.T) {
 		t.Fatalf("expected empty view while quitting, got %q", got)
 	}
 }
+
+func TestSshDoneMsgZeroesPassphraseOnSuccessWithoutSave(t *testing.T) {
+	m := model{
+		phase:                phaseDashboard,
+		pendingKeyPassSave:   false,
+		pendingKeyPassphrase: []byte("secret"),
+	}
+
+	result, _ := m.Update(sshDoneMsg{err: nil})
+	rm := result.(model)
+
+	if rm.pendingKeyPassphrase != nil {
+		t.Fatal("expected pendingKeyPassphrase to be nil after success without save")
+	}
+	if rm.pendingKeyPassSave {
+		t.Fatal("expected pendingKeyPassSave to be false after success without save")
+	}
+}
