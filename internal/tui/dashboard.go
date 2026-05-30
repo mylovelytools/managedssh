@@ -84,12 +84,12 @@ func (m model) updateDashboardNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.healthChecking = true
 		return m, healthCheckAllCmd(m.store.Hosts, m.encKey)
 	case "j", "down":
-		if m.hostCursor < len(m.filtered)-1 {
-			m.hostCursor++
+		if len(m.filtered) > 0 {
+			m.hostCursor = (m.hostCursor + 1) % len(m.filtered)
 		}
 	case "k", "up":
-		if m.hostCursor > 0 {
-			m.hostCursor--
+		if len(m.filtered) > 0 {
+			m.hostCursor = (m.hostCursor - 1 + len(m.filtered)) % len(m.filtered)
 		}
 	case "/":
 		m.searchFocused = true
