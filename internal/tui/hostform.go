@@ -209,11 +209,11 @@ func (m model) updateHostForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.cycleFormFocus(1)
 		case "shift+tab", "up":
 			return m.cycleFormFocus(-1)
-		case "ctrl+n":
+		case "ctrl+down":
 			if m.cyclePathSuggestion(1) {
 				return m, nil
 			}
-		case "ctrl+p":
+		case "ctrl+up":
 			if m.cyclePathSuggestion(-1) {
 				return m, nil
 			}
@@ -239,6 +239,17 @@ func (m model) updateHostForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case fSelectedUserAuth:
 				m.selectSelectedUserAuth(1)
+				return m, nil
+			case fSelectedUserCredential:
+				// Right arrow (not the 'l' character) accepts the ghost suggestion.
+				if key.String() == "right" && len(m.formPathSuggestions) > 0 {
+					m.acceptPathSuggestion()
+					return m, nil
+				}
+			}
+		case "end":
+			if m.formFocus == fSelectedUserCredential && len(m.formPathSuggestions) > 0 {
+				m.acceptPathSuggestion()
 				return m, nil
 			}
 		case " ":
@@ -592,7 +603,7 @@ func (m model) renderSelectedUserSection(contentW int) string {
 			credLabel = focusedLabel("▸ SSH Key")
 		}
 		card.WriteString(credLabel + "\n")
-		card.WriteString(m.formInputs[7].View() + "\n")
+		card.WriteString(m.renderCredentialInputWithGhost() + "\n")
 		card.WriteString(hintStyle.Render("  Key path or paste private key") + "\n")
 		card.WriteString(m.renderPathSuggestions(cardContentW))
 		if m.formEditing != "" && (user.ExistingKeyPath != "" || len(user.ExistingEncKey) > 0) {
@@ -777,6 +788,23 @@ func splitKeyValue(raw string) (string, string) {
 	return raw, ""
 }
 
+// renderCredentialInputWithGhost renders the credential text input and, when a
+// path suggestion is active, appends the untyped completion suffix as greyed-out
+// ghost text — the same inline-preview style used by fish shell.
+func (m model) renderCredentialInputWithGhost() string {
+	base := m.formInputs[7].View()
+	user := m.currentFormUser()
+	if user == nil || user.AuthType != "key" || len(m.formPathSuggestions) == 0 {
+		return base
+	}
+	suggestion := m.formPathSuggestions[m.formPathSuggestIndex]
+	current := strings.TrimSpace(m.formInputs[7].Value())
+	if len(suggestion) <= len(current) || !strings.EqualFold(suggestion[:len(current)], current) {
+		return base
+	}
+	return base + lipgloss.NewStyle().Foreground(subtle).Render(suggestion[len(current):])
+}
+
 func (m *model) activePathInput() (*textinput.Model, bool) {
 	if m.formFocus == fSelectedUserCredential {
 		if user := m.currentFormUser(); user != nil && user.AuthType == "key" {
@@ -865,8 +893,8 @@ func completePathSuggestions(raw string) []string {
 		matches = append(matches, display)
 	}
 	sort.Strings(matches)
-	if len(matches) > 5 {
-		matches = matches[:5]
+	if len(matches) > 8 {
+		matches = matches[:8]
 	}
 	return matches
 }
@@ -949,7 +977,7 @@ func (m model) renderPathSuggestions(contentW int) string {
 	}
 	itemW := max(20, contentW-2)
 	var b strings.Builder
-	b.WriteString(hintStyle.Render("  Suggestions (tab accept • ctrl+n/p select):") + "\n")
+	b.WriteString(hintStyle.Render("  Suggestions (→/end/tab accept • ctrl+↑↓ cycle):") + "\n")
 
 	for i, s := range m.formPathSuggestions {
 		label := truncateForWidth(s, itemW-4)
