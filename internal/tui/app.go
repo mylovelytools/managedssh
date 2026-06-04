@@ -302,6 +302,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingKeyPassSave = false
 		zeroBytes(m.pendingKeyPassphrase)
 		m.pendingKeyPassphrase = nil
+		m = m.refreshFiltered()
 		return m, nil
 	case dashboardTrustDoneMsg:
 		if msg.err != nil {
